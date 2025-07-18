@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
 FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
 # 【V2 新增】使用 Google Gemini API Key
-GOOGLE_API_KEY = os.environ.get("AIzaSyBFo6dLz18GJIIYEJyCMR4U_rvCgMwHJ28")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 # --- Gemini API 配置 ---
 if GOOGLE_API_KEY:
