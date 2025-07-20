@@ -70,12 +70,14 @@ def get_bot_open_id():
         response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()
         data = response.json()
-        if data.get("code") == 0 and data.get("data", {}).get("open_id"):
-            _BOT_OPEN_ID = data["data"]["open_id"]
+        # >>> 修改这里：从 'data' 字段改为 'bot' 字段访问 open_id
+        if data.get("code") == 0 and data.get("bot", {}).get("open_id"):
+            _BOT_OPEN_ID = data["bot"]["open_id"]
             print(f">>> [Log] 成功获取 Bot Open ID: {_BOT_OPEN_ID}")
             return _BOT_OPEN_ID
         else:
-            print(f"!!! [Error] 获取 Bot Open ID 失败: {data}")
+            # 这里的打印现在应该更少出现，除非是真正的API错误
+            print(f"!!! [Error] 获取 Bot Open ID 失败或数据格式不符: {data}") 
             return None
     except requests.exceptions.RequestException as e:
         print(f"!!! [Error] 请求 Bot Info 异常: {e}")
@@ -102,7 +104,7 @@ def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报�
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
-        print(f">>> [Log] 成功发送飞书消息: {response.json().get('msg')}")
+        print(f">>> [Log] 成功发送飞ishu消息: {response.json().get('msg')}")
     except Exception as e:
         print(f"!!! [Error] 发送飞书消息失败: {e}")
 
@@ -252,15 +254,16 @@ def feishu_event_handler():
     if not bot_open_id:
         print("!!! [Error] 无法获取 Bot Open ID，无法精确过滤群聊/话题消息。请检查 FEISHU_APP_ID/SECRET 和网络。")
         # 如果无法获取机器人ID，群聊/话题消息的 @ 过滤将失效，
-        # 生产环境中可以根据需求决定此处是直接返回忽略，还是继续处理（可能导致不必要的回复）。
-        return jsonify({"status": "ignored", "reason": "Bot ID not available for filtering"})
+        # 在生产环境中，可以根据需求决定此处是直接返回忽略，还是继续处理（可能导致不必要的回复）。
+        # 当前设计是继续处理，但会打印警告，因为p2p消息依然有效。
+        pass # 不再立即返回 ignored，允许P2P消息处理，但群聊过滤会受影响。
 
     should_process = False
 
     if chat_type == "p2p": # 私聊消息，机器人总是回复
         should_process = True
         print(">>> [Log] P2P 消息，直接处理。")
-    elif chat_type == "group" or chat_type == "topic": # 群聊或话题消息，检查是否 @ 了机器人
+    elif (chat_type == "group" or chat_type == "topic") and bot_open_id: # 群聊或话题消息，且成功获取了机器人ID
         for mention in mentions:
             # 检查 mentions 列表中是否有机器人的 open_id
             if mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
@@ -269,6 +272,10 @@ def feishu_event_handler():
                 break
         if not should_process: # 如果是群聊/话题消息但没有 @ 机器人，则忽略
             print(">>> [Log] 群聊/话题消息，但未明确 @机器人，忽略。")
+    elif (chat_type == "group" or chat_type == "topic") and not bot_open_id:
+        # 如果是群聊/话题消息但无法获取机器人ID，则出于安全考虑暂时忽略这类消息
+        print("!!! [Warning] 无法获取 Bot Open ID，群聊/话题消息过滤失效，此消息暂时忽略。")
+        return jsonify({"status": "ignored", "reason": "Bot ID not available for group filtering"})
     else: # 其他不支持的聊天类型，忽略
         print(f">>> [Log] 不支持的聊天类型 ({chat_type})，忽略。")
     
@@ -280,7 +287,12 @@ def feishu_event_handler():
             
             # 移除所有 @ 提及的内容，以便 AI 专注于用户提出的问题/内容
             for mention in mentions:
-                text_content = text_content.replace(mention.get('text', ''), '')
+                # 确保只移除 @ 本机器人的文本，防止移除用户 @ 其他人的内容
+                if bot_open_id and mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
+                     text_content = text_content.replace(mention.get('text', ''), '')
+                # 对于群聊中的 @ 所有人 或 @ 特定用户，不移除他们的文本，因为那是用户输入的一部分
+                # 如果需要移除所有@，需要更复杂的正则匹配
+
             user_question = text_content.strip()
 
             # 如果移除 @ 后消息内容为空（例如，用户只 @ 了一下机器人没说别的），则忽略
@@ -302,7 +314,6 @@ def feishu_event_handler():
                 # 在后台线程中处理通用聊天，避免阻塞主请求
                 thread = threading.Thread(target=process_general_chat, args=(user_question, message_id))
                 thread.start()
-            # else: 理论上这个分支在 `if not user_question` 和 `elif user_question` 后不会触发
 
         except Exception as e:
             print(f"!!! [Error] 处理消息时发生严重错误: {e}")
