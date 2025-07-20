@@ -70,7 +70,7 @@ def get_bot_open_id():
         response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()
         data = response.json()
-        # 修改：从 'data' 字段改为 'bot' 字段访问 open_id，这是根据上次您提供的错误信息调整的
+        # >>> 修正：现在根据您的实际日志，open_id 嵌套在 'bot' 字段下
         if data.get("code") == 0 and data.get("bot", {}).get("open_id"):
             _BOT_OPEN_ID = data["bot"]["open_id"]
             print(f">>> [Log] 成功获取 Bot Open ID: {_BOT_OPEN_ID}")
@@ -266,8 +266,9 @@ def feishu_event_handler():
     elif (chat_type == "group" or chat_type == "topic") and bot_open_id: # 群聊或话题消息，且成功获取了机器人ID
         # 遍历所有 @ 提及，看是否 @ 到了本机器人
         for mention in mentions:
-            # 飞书的 mentions 结构中，id_type 和 id 是关键
-            if mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
+            # >>> 修正：现在正确访问 'id' 对象中的 'open_id'
+            mentioned_open_id = mention.get('id', {}).get('open_id')
+            if mentioned_open_id == bot_open_id:
                 should_process = True
                 print(">>> [Log] 群聊/话题消息，且明确 @了机器人，准备处理。")
                 break
@@ -283,23 +284,22 @@ def feishu_event_handler():
     # 只有当 should_process 为 True 时才进行后续处理
     if should_process:
         try:
-            content = json.loads(message.get("content", "{}"))
-            text_content = content.get("text", "").strip()
+            # >>> 修正：message.content 是一个 JSON 字符串，需要先解析
+            content_json_str = message.get("content", "{}")
+            content_parsed = json.loads(content_json_str)
+            text_content = content_parsed.get("text", "").strip()
             
             # 移除所有 @ 提及的内容，以便 AI 专注于用户提出的问题/内容
-            # 这里需要注意，如果 @ 的文本是可变的，或者有多种格式，这个替换可能不完全。
-            # 更健壮的方法是解析 content 字段中的 "text" 部分，它通常是纯净的用户输入。
-            # 但目前先根据 mentions 移除 @ 的文本。
             for mention in mentions:
-                # 仅移除 @ 本机器人的文本，防止误伤用户 @ 其他人的内容
-                if bot_open_id and mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
-                     # 确保替换的是完整的 @提及文本
-                     mention_text_pattern = re.escape(mention.get('text', ''))
-                     text_content = re.sub(r'' + mention_text_pattern, '', text_content).strip()
-                     # 如果飞书返回的 text_content 格式是 "<at open_id=\"ou_xxxx\">@机器人名称</at> 你好"
-                     # 那么上面的替换可能不够，需要直接从 content 结构中提取非 @ 部分
-                     # 但我们先尝试这个，因为更常见的是纯文本中包含 @ 字符串。
-                
+                mentioned_open_id = mention.get('id', {}).get('open_id')
+                if mentioned_open_id == bot_open_id:
+                     # 飞书的 @ 提及在 content.text 中是形如 "@_user_1" 的占位符
+                     mention_key = mention.get('key', '') # 获取 "@_user_1" 这样的 key
+                     if mention_key:
+                        # 使用 re.sub 确保替换掉所有匹配项，并处理可能的首尾空格
+                        text_content = re.sub(re.escape(mention_key), '', text_content).strip()
+                     break # 假设只 @ 了一个机器人，找到就够了
+
             user_question = text_content.strip()
 
             # 如果移除 @ 后消息内容为空（例如，用户只 @ 了一下机器人没说别的），则忽略
