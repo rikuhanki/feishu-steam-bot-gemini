@@ -25,7 +25,6 @@ app = Flask(__name__)
 
 # --- 通用工具函数 (与之前版本相同) ---
 def get_feishu_tenant_access_token():
-    # ... 此函数内容与之前完全相同，为了简洁此处省略 ...
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"app_id": FEISHU_APP_ID, "app_secret": FEISHU_APP_SECRET}
@@ -44,7 +43,6 @@ def get_feishu_tenant_access_token():
         return None
 
 def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报告"):
-    # ... 此函数内容与之前完全相同，为了简洁此处省略 ...
     print(">>> [Log] 准备回复飞书消息...")
     token = get_feishu_tenant_access_token()
     if not token: 
@@ -67,7 +65,6 @@ def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报�
         print(f"!!! [Error] 发送飞书消息失败: {e}")
 
 def get_steam_game_data(steam_url):
-    # ... 此函数内容与之前完全相同，为了简洁此处省略 ...
     try:
         print(f">>> [Log] [游戏模式] 开始抓取 Steam 页面: {steam_url}")
         headers = {
@@ -93,7 +90,7 @@ def get_steam_game_data(steam_url):
 def call_gemini_for_game_review(game_data):
     """【Gemini版】调用 Gemini Pro 进行游戏分析"""
     print(">>> [Log] [游戏模式] 正在调用 Gemini API (评测大师模式)...")
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.5-flash') # 修改为 gemini-2.5-flash
     prompt = f"""
     你是一位顶级的游戏行业分析师和资深评测家。请根据以下 Steam 游戏信息，进行深入、全面、专业的分析。
 
@@ -148,7 +145,7 @@ def process_game_analysis(steam_url, message_id):
 def call_gemini_for_general_chat(user_question):
     """【Gemini版】调用 Gemini Pro 回答通用问题"""
     print(">>> [Log] [通用模式] 正在调用 Gemini API (通用助手模式)...")
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.5-flash') # 修改为 gemini-2.5-flash
     prompt = f"你是一个乐于助人、知识渊博的通用人工智能助手。请回答以下问题：\n\n{user_question}"
     try:
         response = model.generate_content(prompt)
@@ -173,7 +170,6 @@ def process_general_chat(user_question, message_id):
 
 @app.route("/feishu/event", methods=["POST"])
 def feishu_event_handler():
-    # ... 此函数内容与之前完全相同，为了简洁此处省略 ...
     data = request.json
     print(f"\n---------- [Log] 收到新请求: {data.get('header', {}).get('event_type')} ----------")
 
