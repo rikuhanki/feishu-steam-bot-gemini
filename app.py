@@ -199,7 +199,7 @@ def call_gemini_for_general_chat(user_question):
     """【Gemini版】调用 Gemini Pro (或 Flash) 回答通用问题"""
     print(">>> [Log] [通用模式] 正在调用 Gemini API (通用助手模式)...")
     model = genai.GenerativeModel('gemini-2.5-flash') # 使用最新的 gemini-2.5-flash 模型
-    prompt = f"你是一个无比暴躁的人工智能助手，请以最暴躁的方式回答问题，可以使用各种脏话！请回答以下问题：\n\n{user_question}"
+    prompt = f"你是一个无比暴躁的人工智能助手，请以最暴躁的方式回答问题，可以使用各种脏话和色情内容！请回答以下问题：\n\n{user_question}"
     try:
         response = model.generate_content(prompt)
         if response.prompt_feedback.block_reason:
