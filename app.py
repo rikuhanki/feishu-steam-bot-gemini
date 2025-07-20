@@ -70,13 +70,12 @@ def get_bot_open_id():
         response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()
         data = response.json()
-        # >>> 修改这里：从 'data' 字段改为 'bot' 字段访问 open_id
+        # 修改：从 'data' 字段改为 'bot' 字段访问 open_id，这是根据上次您提供的错误信息调整的
         if data.get("code") == 0 and data.get("bot", {}).get("open_id"):
             _BOT_OPEN_ID = data["bot"]["open_id"]
             print(f">>> [Log] 成功获取 Bot Open ID: {_BOT_OPEN_ID}")
             return _BOT_OPEN_ID
         else:
-            # 这里的打印现在应该更少出现，除非是真正的API错误
             print(f"!!! [Error] 获取 Bot Open ID 失败或数据格式不符: {data}") 
             return None
     except requests.exceptions.RequestException as e:
@@ -104,7 +103,7 @@ def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报�
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
-        print(f">>> [Log] 成功发送飞ishu消息: {response.json().get('msg')}")
+        print(f">>> [Log] 成功发送飞书消息: {response.json().get('msg')}")
     except Exception as e:
         print(f"!!! [Error] 发送飞书消息失败: {e}")
 
@@ -233,6 +232,8 @@ def feishu_event_handler():
     """
     data = request.json
     print(f"\n---------- [Log] 收到新请求: {data.get('header', {}).get('event_type')} ----------")
+    # !!! DEBUG 打印：打印完整的接收到的飞书请求数据，用于排查 @ 消息问题
+    print(f">>> [DEBUG] 完整请求数据: {json.dumps(data, indent=2, ensure_ascii=False)}") 
 
     # 处理飞书 URL 验证请求
     if "challenge" in data:
@@ -253,10 +254,9 @@ def feishu_event_handler():
     bot_open_id = get_bot_open_id()
     if not bot_open_id:
         print("!!! [Error] 无法获取 Bot Open ID，无法精确过滤群聊/话题消息。请检查 FEISHU_APP_ID/SECRET 和网络。")
-        # 如果无法获取机器人ID，群聊/话题消息的 @ 过滤将失效，
-        # 在生产环境中，可以根据需求决定此处是直接返回忽略，还是继续处理（可能导致不必要的回复）。
-        # 当前设计是继续处理，但会打印警告，因为p2p消息依然有效。
-        pass # 不再立即返回 ignored，允许P2P消息处理，但群聊过滤会受影响。
+        # 即使无法获取机器人ID，P2P消息依然可以处理，但群聊过滤会受影响。
+        # 这里不立即返回 ignored，而是让P2P消息继续，群聊消息则会在下面逻辑中因bot_open_id缺失而被跳过
+        pass
 
     should_process = False
 
@@ -264,8 +264,9 @@ def feishu_event_handler():
         should_process = True
         print(">>> [Log] P2P 消息，直接处理。")
     elif (chat_type == "group" or chat_type == "topic") and bot_open_id: # 群聊或话题消息，且成功获取了机器人ID
+        # 遍历所有 @ 提及，看是否 @ 到了本机器人
         for mention in mentions:
-            # 检查 mentions 列表中是否有机器人的 open_id
+            # 飞书的 mentions 结构中，id_type 和 id 是关键
             if mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
                 should_process = True
                 print(">>> [Log] 群聊/话题消息，且明确 @了机器人，准备处理。")
@@ -286,13 +287,19 @@ def feishu_event_handler():
             text_content = content.get("text", "").strip()
             
             # 移除所有 @ 提及的内容，以便 AI 专注于用户提出的问题/内容
+            # 这里需要注意，如果 @ 的文本是可变的，或者有多种格式，这个替换可能不完全。
+            # 更健壮的方法是解析 content 字段中的 "text" 部分，它通常是纯净的用户输入。
+            # 但目前先根据 mentions 移除 @ 的文本。
             for mention in mentions:
-                # 确保只移除 @ 本机器人的文本，防止移除用户 @ 其他人的内容
+                # 仅移除 @ 本机器人的文本，防止误伤用户 @ 其他人的内容
                 if bot_open_id and mention.get('id_type') == 'open_id' and mention.get('id') == bot_open_id:
-                     text_content = text_content.replace(mention.get('text', ''), '')
-                # 对于群聊中的 @ 所有人 或 @ 特定用户，不移除他们的文本，因为那是用户输入的一部分
-                # 如果需要移除所有@，需要更复杂的正则匹配
-
+                     # 确保替换的是完整的 @提及文本
+                     mention_text_pattern = re.escape(mention.get('text', ''))
+                     text_content = re.sub(r'' + mention_text_pattern, '', text_content).strip()
+                     # 如果飞书返回的 text_content 格式是 "<at open_id=\"ou_xxxx\">@机器人名称</at> 你好"
+                     # 那么上面的替换可能不够，需要直接从 content 结构中提取非 @ 部分
+                     # 但我们先尝试这个，因为更常见的是纯文本中包含 @ 字符串。
+                
             user_question = text_content.strip()
 
             # 如果移除 @ 后消息内容为空（例如，用户只 @ 了一下机器人没说别的），则忽略
